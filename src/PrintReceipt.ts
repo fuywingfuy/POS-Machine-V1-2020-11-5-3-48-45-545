@@ -1,4 +1,7 @@
+import { TagItemSubtotal } from './TagItemSubtotal'
 import {loadAllItems, loadPromotions} from './Dependencies'
+import { Tag } from './Tag'
+import { TagItem } from './TagItem'
 
 function reformTags(tags: string[]): string[] {
   const newTags: string[] = []
@@ -9,24 +12,27 @@ function reformTags(tags: string[]): string[] {
 }
 
 function getUniqueBarcodes(tags: string[]): string[] {
-  const uniqueBarcodes: string[] = []
-  for(let i = 0; i < tags.length; i++) {
-    if(uniqueBarcodes.indexOf(tags[i]) === -1) {
-      uniqueBarcodes.push(tags[i])
+  const newTags = reformTags(tags)
+  const barcodes: string[] = []
+  for(let i = 0; i < newTags.length; i++) {
+    if(barcodes.indexOf(newTags[i]) === -1) {
+      barcodes.push(newTags[i])
     }
   }
-  return uniqueBarcodes
+  return barcodes
 }
+
+//console.log(getUniqueBarcodes(reformTags(data)))
 
 function getQuantity(tags: string[]) {
   const newTags = reformTags(tags)
-  const uniqueBarcodes = getUniqueBarcodes(newTags)
+  const newBarcodes = getUniqueBarcodes(newTags)
   const counts: number[] = []
-  for(let i = 0; i < uniqueBarcodes.length; i++) {
+  for(let i = 0; i < newBarcodes.length; i++) {
     let count = 0
     for(let j = 0; j < tags.length; j++) {
-      if(tags[j] === tags[j].substring(0,10) && tags[j].substring(0, 10) === uniqueBarcodes[i]) count++
-      if(tags[j] !== tags[j].substring(0,10) && tags[j].substring(0, 10) === uniqueBarcodes[i]) {
+      if(tags[j] === tags[j].substring(0,10) && tags[j].substring(0, 10) === newBarcodes[i]) count++
+      if(tags[j] !== tags[j].substring(0,10) && tags[j].substring(0, 10) === newBarcodes[i]) {
         count += Number(tags[j].substring(11))
       }
     }
@@ -35,19 +41,146 @@ function getQuantity(tags: string[]) {
   return counts
 }
 
-export function printReceipt(tags: string[]): string {
+function processTags(barcode: string[], quantity: number[]): Tag[]
+{
+  const myTags: Tag[] = []
+  for(let i = 0; i < barcode.length; i++)
+  {
+    const myTag: Tag =
+      {
+        barcode: barcode[i],
+        quantity: quantity[i]
+      }
+    myTags.push(myTag)
+  }
+  return myTags
+}
 
-  //const uniqueBarcodes = getUniqueBarcodes(tags)
-  //const quantities = getQuantity(tags)
-  //const hasPromotions = hasPromotionBar(uniqueBarcodes)
-  //const isPromotionsBarGreaterThan2()
-  // return 'xxxx'
-  return `***<store earning no money>Receipt ***
-Name：Sprite，Quantity：5 bottles，Unit：3.00(yuan)，Subtotal：12.00(yuan)
-Name：Litchi，Quantity：2.5 pounds，Unit：15.00(yuan)，Subtotal：37.50(yuan)
-Name：Instant Noodles，Quantity：3 bags，Unit：4.50(yuan)，Subtotal：9.00(yuan)
-----------------------
-Total：58.50(yuan)
-Discounted prices：7.50(yuan)
-**********************`
+function getItemInformation(myTags: Tag[]): TagItem[]
+{
+  const allItems = loadAllItems()
+  const myTagItems: TagItem[] = []
+  for(let i = 0; i < myTags.length; i++)
+  {
+    for(let j = 0; j < allItems.length; j++)
+    {
+      if(allItems[j].barcode === myTags[i].barcode)
+      {
+        const myTagItem: TagItem =
+                {
+                  name: allItems[j].name,
+                  barcode: myTags[i].barcode,
+                  quantity: myTags[i].quantity,
+                  unit: allItems[j].unit,
+                  price: allItems[j].price
+                }
+        myTagItems.push(myTagItem)
+      }
+    }
+  }
+  return myTagItems
+}
+
+function isReceiptBarcodePromotion(myTagItem: TagItem): boolean
+{
+  const promotion = loadPromotions()
+  const promotionTags = promotion[0].barcodes
+  const condition = promotionTags.indexOf(myTagItem.barcode) !== -1
+  return condition
+}
+
+function calculateSubtotal(myTagItems: TagItem[]): TagItemSubtotal[]
+{
+  const myTagItemSubtotals: TagItemSubtotal[] = []
+  let subtotal: number
+  for(let i = 0; i < myTagItems.length; i++)
+  {
+    if(!isReceiptBarcodePromotion(myTagItems[i]))
+    {
+      subtotal = myTagItems[i].quantity * myTagItems[i].price
+    }
+    else
+    {
+      if(myTagItems[i].quantity >= 3)
+      {
+        subtotal = (myTagItems[i].quantity - 1) * myTagItems[i].price
+      }
+      else
+      {
+        subtotal = myTagItems[i].quantity * myTagItems[i].price
+      }
+    }
+    const myTagItemSubtotal: TagItemSubtotal =
+        {
+          name: myTagItems[i].name,
+          barcode: myTagItems[i].barcode,
+          quantity: myTagItems[i].quantity,
+          unit: myTagItems[i].unit,
+          price: myTagItems[i].price,
+          subtotal: subtotal
+        }
+    myTagItemSubtotals.push(myTagItemSubtotal)
+  }
+  return myTagItemSubtotals
+}
+
+function calculateTotalToString(myTagItemSubtotal: TagItemSubtotal[]): string
+{
+  let total = 0
+  for(let i = 0; i < myTagItemSubtotal.length; i++)
+  {
+    total += myTagItemSubtotal[i].subtotal
+  }
+  return `Total：${total.toFixed(2)}(yuan)`
+}
+
+function calculateDiscountedPriceToString(myTagItemSubtotal: TagItemSubtotal[]): string
+{
+  let dicountedPrice = 0
+  for(let i = 0; i < myTagItemSubtotal.length; i++)
+  {
+    if(isReceiptBarcodePromotion(myTagItemSubtotal[i]))
+    {
+      if(myTagItemSubtotal[i].quantity >= 3)
+      {
+        dicountedPrice += myTagItemSubtotal[i].price
+      }
+    }
+  }
+  return `Discounted prices：${dicountedPrice.toFixed(2)}(yuan)`
+}
+
+function processOutput(myTagItemSubtotal: TagItemSubtotal[]): string
+{
+  let output = ''
+  for(let i = 0; i < myTagItemSubtotal.length; i++)
+  {
+    let spacing = ''
+    if(myTagItemSubtotal[i].quantity > 1)
+    {
+      spacing = myTagItemSubtotal[i].unit + 's'
+    }
+    else
+    {
+      spacing = myTagItemSubtotal[i].unit
+    }
+    output += `Name：${myTagItemSubtotal[i].name}，Quantity：${myTagItemSubtotal[i].quantity} ${spacing}，Unit：${myTagItemSubtotal[i].price.toFixed(2)}(yuan)，Subtotal：${myTagItemSubtotal[i].subtotal.toFixed(2)}(yuan)\n`
+  }
+  return output
+}
+
+export function printReceipt(tags: string[]): string
+{
+
+  const barcodes = getUniqueBarcodes(tags)
+  const quanties = getQuantity(tags)
+  const myTags = processTags(barcodes, quanties)
+  const myTagItems = getItemInformation(myTags)
+  const myTagItemSubtotals = calculateSubtotal(myTagItems)
+  const totalText = calculateTotalToString(myTagItemSubtotals)
+  const dicountedPriceText = calculateDiscountedPriceToString(myTagItemSubtotals)
+  const itemsText = processOutput(myTagItemSubtotals)
+
+  const receipt = `***<store earning no money>Receipt ***\n${itemsText}----------------------\n${totalText}\n${dicountedPriceText}\n**********************`
+  return receipt
 }
